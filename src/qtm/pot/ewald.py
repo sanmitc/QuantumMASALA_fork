@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = ["compute"]
 import numpy as np
 from scipy.special import erfc
+import tracemalloc
 
 from qtm.crystal import Crystal
 from qtm.gspace import GSpace
@@ -11,6 +12,8 @@ EWALD_ERR_THR = 1e-7
 
 
 def compute(crystal: Crystal, gspc: GSpace) -> float:
+    # tracemalloc.start()
+    
     reallat, l_species = crystal.reallat, crystal.l_atoms
     latvec, cellvol = reallat.primvec, reallat.cellvol
     _2pibv = 2 * np.pi / cellvol
@@ -33,12 +36,33 @@ def compute(crystal: Crystal, gspc: GSpace) -> float:
     ecut = gspc.ecut
     g_cryst = gspc.g_cryst
     g_norm2 = gspc.g_norm2
-    struct_fac = np.sum(
-        np.exp(-2 * np.pi * 1j * r_cryst_all.T @ g_cryst) * l_charges.reshape(-1, 1),
-        axis=0,
-    )
+    
 
-    def err_bounds(_alpha):
+    # phase = np.einsum("ji,jk->ik", r_cryst_all, g_cryst)  # Optimized dot product
+    # exp_phase = np.exp(-2j * np.pi * phase)  # Avoid extra memory allocation
+    # print(exp_phase.shape)
+    # struct_fac = np.einsum("i,ik->k", l_charges, exp_phase)  # Efficient summation
+
+    print("Computing structure factor...")
+    print(f"r_cryst_all shape: {r_cryst_all.shape}")
+    print(f"g_cryst shape: {g_cryst.shape}")
+    print(f"l_charges shape: {l_charges.shape}")
+
+    # Older, vectorized version
+    # struct_fac = np.sum(
+    #     np.exp(-2j * np.pi * r_cryst_all.T @ g_cryst) * l_charges.reshape(-1, 1),
+    #     axis=0,
+    # )
+
+    # Newer, looped version
+    struct_fac = np.zeros(g_cryst.shape[1], dtype=np.complex128)  # Initialize accumulation array
+    for i in range(r_cryst_all.shape[1]):  
+        struct_fac += l_charges[i] * np.exp(-2j * np.pi * (r_cryst_all[:,i]@g_cryst))  # Accumulate result element-wise
+
+    # current, peak = tracemalloc.get_traced_memory()
+    # print(f"Current memory usage: {current / 10**6}MB; Peak: {peak / 10**6}MB")
+
+    def err_bounds(_alpha): 
         return (
             np.sum(l_charges) ** 2
             * np.sqrt(_alpha / np.pi)
@@ -77,4 +101,17 @@ def compute(crystal: Crystal, gspc: GSpace) -> float:
 
     f = np.exp(-g_norm2[1:] / (4 * alpha)) / g_norm2[1:]
     E_L = _2pibv * (np.sum(f * np.abs(struct_fac[1:]) ** 2) - np.sum(qij) / (4 * alpha))
+    
+    # current, peak = tracemalloc.get_traced_memory()
+    # print(f"Current memory usage: {current / 10**6}MB; Peak: {peak / 10**6}MB")
+    
+    # snapshot = tracemalloc.take_snapshot()
+    # top_stats = snapshot.statistics('traceback')[0:2]
+    # print("================ SNAPSHOT =================")
+    # for stat in top_stats:
+    #     print(f"{stat.count} memory blocks: {stat.size / 1024:.1f} KiB")
+    #     print(stat.traceback.format())
+
+    # tracemalloc.stop()
+    
     return E_S + E_L - E_self

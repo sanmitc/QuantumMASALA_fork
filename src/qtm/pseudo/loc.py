@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = ["loc_generate_rhoatomic", "loc_generate_pot_rhocore"]
 import numpy as np
 from scipy.special import erf
+import tracemalloc
 
 from qtm.crystal.basis_atoms import BasisAtoms
 from qtm.gspace import GSpace
@@ -103,9 +104,21 @@ def loc_generate_rhoatomic(sp: BasisAtoms, grho: GSpace) -> FieldGType:
     g_norm = grho.g_norm
     FieldG: type[FieldGType] = get_FieldG(grho)
 
-    struct_fac = FieldG(
-        np.sum(np.exp((-2 * np.pi * 1j) * (sp.r_cryst.T @ g_cryst)), axis=0)
-    )
+    # tracemalloc.start()
+
+    # Vectorized version
+    # struct_fac = FieldG(
+    #     np.sum(np.exp((-2 * np.pi * 1j) * (sp.r_cryst.T @ g_cryst)), axis=0)
+    # )
+
+    # Looped version
+    struct_fac = FieldG(np.zeros(g_cryst.shape[1], dtype=np.complex128))
+    for i in range(sp.r_cryst.shape[1]):
+        struct_fac += np.exp(-2j * np.pi * (sp.r_cryst[:, i] @ g_cryst))
+
+    # current, peak = tracemalloc.get_traced_memory()
+    # print(f"loc_generate_rhoatomic: Current memory usage: {current / 10**6}MB; Peak: {peak / 10**6}MB")
+    # tracemalloc.stop()
 
     r = np.asarray(upfdata.r, like=g_cryst)
     r_ab = np.asarray(upfdata.r_ab, like=g_cryst)
@@ -160,11 +173,23 @@ def loc_generate_pot_rhocore(sp: BasisAtoms, grho: GSpace) -> (FieldGType, Field
     valence = upfdata.z_valence
 
     sp_r_cryst = np.asarray(sp.r_cryst, like=g_cryst)
-    struct_fac = FieldG(
-        np.sum(np.exp((-2 * np.pi * 1j) * (sp_r_cryst.T @ g_cryst)), axis=0)
-    )
 
-    # Radial Mesh specified in Pseudopotential Data
+    # tracemalloc.start()
+
+    # Vectorized version
+    # struct_fac = FieldG(
+    #     np.sum(np.exp((-2 * np.pi * 1j) * (sp_r_cryst.T @ g_cryst)), axis=0)
+    # )
+
+    # Looped version
+    struct_fac = FieldG(np.zeros(g_cryst.shape[1], dtype=np.complex128))
+    for i in range(sp_r_cryst.shape[1]):
+        struct_fac += np.exp(-2j * np.pi * (sp_r_cryst[:, i] @ g_cryst))
+
+    # current, peak = tracemalloc.get_traced_memory()
+    # print(f"loc_generate_pot_rhocore: Current memory usage: {current / 10**6}MB; Peak: {peak / 10**6}MB")
+    # tracemalloc.stop()
+
     r = np.asarray(upfdata.r, like=g_cryst)
     r_ab = np.asarray(upfdata.r_ab, like=g_cryst)
 
