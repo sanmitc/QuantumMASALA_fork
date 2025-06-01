@@ -33,10 +33,26 @@ def compute(crystal: Crystal, gspc: GSpace) -> float:
     ecut = gspc.ecut
     g_cryst = gspc.g_cryst
     g_norm2 = gspc.g_norm2
-    struct_fac = np.sum(
-        np.exp(-2 * np.pi * 1j * r_cryst_all.T @ g_cryst) * l_charges.reshape(-1, 1),
-        axis=0,
-    )
+
+    # phase = np.einsum("ji,jk->ik", r_cryst_all, g_cryst)  # Optimized dot product
+    # exp_phase = np.exp(-2j * np.pi * phase)  # Avoid extra memory allocation
+    # print(exp_phase.shape)
+    # struct_fac = np.einsum("i,ik->k", l_charges, exp_phase)  # Efficient summation
+
+    # Older, vectorized version
+    # struct_fac = np.sum(
+    #     np.exp(-2j * np.pi * r_cryst_all.T @ g_cryst) * l_charges.reshape(-1, 1),
+    #     axis=0,
+    # )
+
+    # Newer, looped version
+    struct_fac = np.zeros(
+        g_cryst.shape[1], dtype=np.complex128
+    )  # Initialize accumulation array
+    for i in range(r_cryst_all.shape[1]):
+        struct_fac += l_charges[i] * np.exp(
+            -2j * np.pi * (r_cryst_all[:, i] @ g_cryst)
+        )  # Accumulate result element-wise
 
     def err_bounds(_alpha):
         return (
@@ -77,4 +93,5 @@ def compute(crystal: Crystal, gspc: GSpace) -> float:
 
     f = np.exp(-g_norm2[1:] / (4 * alpha)) / g_norm2[1:]
     E_L = _2pibv * (np.sum(f * np.abs(struct_fac[1:]) ** 2) - np.sum(qij) / (4 * alpha))
+
     return E_S + E_L - E_self

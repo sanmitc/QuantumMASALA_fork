@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, List, Union
 
+from qtm.logger import COMM_WORLD
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 __all__ = ["KSWfn"]
@@ -105,16 +107,38 @@ class KSWfn:
         """Occupation number of the eigenkets in `evc_gk`
         """
 
+    # @profile(precision=4)
     def init_random(self):
         """Initializes `evc_gk` with an unnormalized randomized
-        wavefunction"""
+        wavefunction, optimized for reduced memory consumption."""
+
         rng_mod = get_rng_module(self.evc_gk.data)
         seed_k = np.array(self.k_cryst).view("uint")
         rng = rng_mod.default_rng([seed_k, qtmconfig.rng_seed])
         data = self.evc_gk.data
-        np.multiply(
-            rng.random(data.shape), np.exp(TPIJ * rng.random(data.shape)), out=data
-        )
+
+        # Generate random values in chunks to reduce memory usage
+        chunk_size = max(1, 10)
+        #          = max(1, data.shape[0] // int(data.shape[0]/10))  # Adjust chunk size as needed
+        for i in range(0, data.shape[0], chunk_size):
+            chunk = slice(i, i + chunk_size)
+            # rng.random(data[chunk].shape, out=data[chunk], dtype=data.dtype)
+            # data[chunk] += 1j*rng.random(data[chunk].shape)
+            random_real = rng.random(data[chunk].shape)
+            random_imag = rng.random(data[chunk].shape)
+
+            np.multiply(random_real, np.exp(TPIJ * random_imag), out=data[chunk])
+
+            # In-place multiplication
+            # data[chunk] = random_real[:]
+            # data[chunk] += 1j * random_imag
+            # del random_real, random_imag  # Free memory immediately
+
+        # Old code, before memory optimization using chunks
+        # np.multiply(
+        #     rng.random(data.shape), np.exp(TPIJ * rng.random(data.shape)), out=data
+        # )
+
         self.evc_gk /= 1 + self.gkspc.gk_norm2
 
     def compute_rho(
