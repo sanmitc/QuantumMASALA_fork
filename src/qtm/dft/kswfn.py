@@ -1,7 +1,5 @@
 from __future__ import annotations
-import tracemalloc
 from typing import TYPE_CHECKING, List, Union
-# from memory_profiler import profile
 
 from qtm.logger import COMM_WORLD
 
@@ -113,9 +111,6 @@ class KSWfn:
     def init_random(self):
         """Initializes `evc_gk` with an unnormalized randomized
         wavefunction, optimized for reduced memory consumption."""
-        
-        current, peak = tracemalloc.get_traced_memory()
-        print(f"\tkswfn init_random beg: Current memory usage: {current / 10**6}MB; Peak: {peak / 10**6}MB; rank: {COMM_WORLD.rank}", flush=True)
 
         rng_mod = get_rng_module(self.evc_gk.data)
         seed_k = np.array(self.k_cryst).view("uint")
@@ -123,7 +118,8 @@ class KSWfn:
         data = self.evc_gk.data
 
         # Generate random values in chunks to reduce memory usage
-        chunk_size = max(1, 10)#data.shape[0] // int(data.shape[0]/10))  # Adjust chunk size as needed
+        chunk_size = max(1, 10)
+        #          = max(1, data.shape[0] // int(data.shape[0]/10))  # Adjust chunk size as needed
         for i in range(0, data.shape[0], chunk_size):
             chunk = slice(i, i + chunk_size)
             # rng.random(data[chunk].shape, out=data[chunk], dtype=data.dtype)
@@ -131,18 +127,19 @@ class KSWfn:
             random_real = rng.random(data[chunk].shape)
             random_imag = rng.random(data[chunk].shape)
 
-            np.multiply(
-                random_real, np.exp(TPIJ * random_imag), out=data[chunk]
-            )
+            np.multiply(random_real, np.exp(TPIJ * random_imag), out=data[chunk])
+
             # In-place multiplication
-            # data[chunk] = random_real[:] 
+            # data[chunk] = random_real[:]
             # data[chunk] += 1j * random_imag
             # del random_real, random_imag  # Free memory immediately
 
-        self.evc_gk /= 1 + self.gkspc.gk_norm2
+        # Old code, before memory optimization using chunks
+        # np.multiply(
+        #     rng.random(data.shape), np.exp(TPIJ * rng.random(data.shape)), out=data
+        # )
 
-        current, peak = tracemalloc.get_traced_memory()
-        print(f"kswfn init_random end: Current memory usage: {current / 10**6}MB; Peak: {peak / 10**6}MB; rank: {COMM_WORLD.rank}", flush=True)
+        self.evc_gk /= 1 + self.gkspc.gk_norm2
 
     def compute_rho(
         self, ibnd: slice | Sequence[int] = slice(None), ret_raw=False, normalize=False
