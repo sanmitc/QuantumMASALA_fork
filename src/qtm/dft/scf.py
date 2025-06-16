@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+import gc
 
 from qtm.logger import qtmlogger
 from qtm.config import MPI4PY_INSTALLED
@@ -103,6 +104,7 @@ def scf(
     mix_dim: int = 8,
     dftconfig: DFTConfig | None = None,
     ret_vxc: bool = False,
+    force_stress: bool = False,
 ) -> (
     tuple[bool, FieldGType, list[list[KSWfn]], EnergyData, np.ndarray]
     | tuple[bool, FieldGType, list[list[KSWfn]], EnergyData]
@@ -297,18 +299,21 @@ def scf(
                 ksham = [None]
             l_kswfn_kgrp.append(kswfn)
             l_ksham_kgrp.append(ksham)
-
         if is_gwfn_dist:
             FieldG_rho: FieldGType = get_DistFieldG(grho)
         else:
             FieldG_rho: FieldGType = get_FieldG(grho)
         v_ion, rho_core = FieldG_rho.zeros(()), FieldG_rho.zeros(1)
+
+        v_ion_list=[]
         l_nloc = []
+        local_fs=False
         for sp in crystal.l_atoms:
-            v_ion_sp, rho_core_sp = loc_generate_pot_rhocore(sp, grho)
+            v_ion_sp, rho_core_sp, v_ion_nomult, rho_core_nomult = loc_generate_pot_rhocore(sp, grho)
             v_ion += v_ion_sp
             rho_core += rho_core_sp
             l_nloc.append(NonlocGenerator(sp, gwfn))
+            v_ion_list.append(v_ion_nomult)
         v_ion = v_ion.to_r()
 
         en = EnergyData()
@@ -331,14 +336,17 @@ def scf(
         vloc: FieldRType
         v_ion_g0: Number
         vloc_g0: list[Number]
+        xc_compute:list[FieldRType, Number, np.ndarray]
+        #endregion
 
         def normalize_rho(rho: FieldGType):
             rho *= crystal.numel / (sum(rho.data_g0) * rho.gspc.reallat_dv)
 
         def compute_vloc():
-            nonlocal rho_in, v_hart, v_xc, vloc, vloc_g0, v_ion_g0
+            nonlocal rho_in, v_hart, v_xc, vloc, vloc_g0, v_ion_g0, xc_compute
             v_hart, en.hartree = hartree.compute(rho_in)
-            v_xc, en.xc = xc.compute(rho_in, rho_core, *libxc_func)
+            v_xc, en.xc, GGA = xc.compute(rho_in, rho_core, *libxc_func, force_stress=local_fs)
+            xc_compute=(v_xc, en.xc, GGA)
             vloc = v_ion + v_hart + v_xc
 
             # Grid interpolation from grho -> gwfn goes here
@@ -347,8 +355,10 @@ def scf(
             pwgrp_inter_kgrp.bcast(vloc.data)
             image_comm.bcast(vloc.data)
             v_ion_g0 = np.sum(v_ion) / np.prod(grho.grid_shape)
+        
+        #print("initialized vloc", flush=True)
 
-        # Defining KS Hamiltonian solver routines
+        #region Defining KS Hamiltonian solver routines
         if dftconfig.eigsolve_method == "davidson":
             solver = eigsolve.davidson
             solver_kwargs = {
@@ -367,7 +377,8 @@ def scf(
                 "vloc_g0": None,
             }
 
-        def solve_kswfn(kswfn_k: list[KSWfn], ksham_k: list[KSHam]):
+        def solve_kswfn(kswfn_k: list[KSWfn], ksham_k: list[KSHam],
+                        force_stress=force_stress) -> float:
             numiter = 0
             for ispin in range(2 if is_spin and not is_noncolin else 1):
                 kswfn_ = kswfn_k[ispin]
@@ -387,9 +398,12 @@ def scf(
                 _, niter = solver.solve(
                     dftcomm, ksham_, kswfn_, diago_thr, **solver_kwargs
                 )
+                if force_stress and ispin==0:
+                    vkb_dij=ksham_.l_vkb_dij
+                else: vkb_dij=None 
                 numiter += niter
             numiter /= 2 if is_spin and not is_noncolin else 1
-            return numiter
+            return numiter, vkb_dij
 
         # Generating rho from l_kswfn_kgrp
         def update_rho_out():
@@ -465,6 +479,9 @@ def scf(
         scf_converged = False
 
         idxiter = 0
+        nloc_dij_vkb=[]
+        v_hxc_out=0
+        
         while idxiter < maxiter:
             print(end="", flush=True)
             if symm_rho:
@@ -475,7 +492,9 @@ def scf(
 
             diago_avgiter = 0
             for kswfn_, ksham_ in zip(l_kswfn_kgrp, l_ksham_kgrp):
-                diago_avgiter += solve_kswfn(kswfn_, ksham_)
+                numiter, dij_vkb = solve_kswfn(kswfn_, ksham_)
+                if idxiter==0: nloc_dij_vkb.append(dij_vkb)
+                diago_avgiter += numiter
             diago_avgiter /= len(i_kpts_kgrp)
 
             if occ_typ == "fixed":
@@ -556,6 +575,20 @@ def scf(
                 return np.array(vxc_arr)
 
             vxc_arr = calculate_vxc_data()
+            for var in list(locals().keys()):
+                if var not in ["scf_converged", "rho_in", "l_kswfn_kgrp", "en", "vxc_arr"]:
+                    del locals()[var]
+            gc.collect()
             return scf_converged, rho_in, l_kswfn_kgrp, en, vxc_arr
+        if force_stress:
+            for var in list(locals().keys()):
+                if var not in ["scf_converged", "rho_in", "l_kswfn_kgrp", "en", "nloc_dij_vkb"]:
+                    del locals()[var]
+            gc.collect()
+            return scf_converged, rho_in, l_kswfn_kgrp, en, v_ion_list, nloc_dij_vkb, xc_compute, del_v_hxc
         else:
+            for var in list(locals().keys()):
+                if var not in ["scf_converged", "rho_in", "l_kswfn_kgrp", "en"]:
+                    del locals()[var]
+            gc.collect()
             return scf_converged, rho_in, l_kswfn_kgrp, en
