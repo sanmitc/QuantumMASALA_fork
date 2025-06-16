@@ -1,0 +1,199 @@
+
+import numpy as np
+"""
+This example file demonstrates the usage of G-space parallelization in QuantumMASALA.
+
+The code performs a self-consistent field (SCF) calculation for a silicon supercell.
+
+The main steps of the code are as follows:
+1. Import necessary modules and libraries.
+2. Set up the communication world for parallelization.
+3. Define the lattice and atom basis for the crystal.
+4. Generate the supercell based on the specified size.
+5. Generate k-points using a Monkhorst Pack grid.
+6. Set up the G-Space for the calculation.
+7. Perform the SCF calculation using the specified parameters.
+8. Print the SCF convergence status and results.
+
+Example usage:
+python si_scf_supercell.py <supercell_size>
+
+Parameters:
+- supercell_size: The size of the supercell in each dimension.
+
+Output:
+- SCF convergence status and results.
+
+"""
+from qtm.constants import RYDBERG
+from qtm.lattice import RealLattice
+from qtm.crystal import BasisAtoms, Crystal
+from qtm.mpi.gspace import DistGSpace
+from qtm.pseudo import UPFv2Data
+from qtm.kpts import gen_monkhorst_pack_grid
+from qtm.gspace import GSpace
+from qtm.mpi import QTMComm
+from qtm.dft import DFTCommMod, scf
+from qtm.force import force, force_ewald, force_local, force_nonloc
+
+from qtm.io_utils.dft_printers import print_scf_status
+
+import argparse
+import time
+
+
+
+from qtm import qtmconfig
+from qtm.logger import qtmlogger
+
+# qtmconfig.fft_backend = "pyfftw"
+qtmconfig.set_gpu(False)
+
+from qtm.config import MPI4PY_INSTALLED
+if MPI4PY_INSTALLED:
+    from mpi4py.MPI import COMM_WORLD
+else:
+    COMM_WORLD = None
+
+comm_world = QTMComm(COMM_WORLD)
+
+# Only G-space parallelization
+# K-point and/or band parallelization along with G-space parallelization is currently broken.
+dftcomm = DFTCommMod(comm_world, 1, comm_world.size)
+
+# Lattice
+reallat = RealLattice.from_alat(
+    alat=10.2, a1=[-0.5, 0.0, 0.5], a2=[0.0, 0.5, 0.5], a3=[-0.5, 0.5, 0.0]  # Bohr
+)
+
+# Atom Basis
+si_oncv = UPFv2Data.from_file("Si_ONCV_PBE-1.2.upf")
+si_atoms = BasisAtoms(
+    "si",
+    si_oncv,
+    28.086,
+    reallat,
+    np.array([[0.875, 0.875, 0.875], [0.125, 0.125, 0.125]]).T,
+)
+
+crystal = Crystal(reallat, [si_atoms])  # Represents the crystal
+
+parser = argparse.ArgumentParser()
+parser.add_argument("supercell_size", help="Side length of the supercell", type=int)
+args = parser.parse_args()
+supercell_size = args.supercell_size
+
+crystal = crystal.gen_supercell([supercell_size] * 3)
+
+
+# Generating k-points from a Monkhorst Pack grid (reduced to the crystal's IBZ)
+mpgrid_shape = (1, 1, 1)
+mpgrid_shift = (False, False, False)
+kpts = gen_monkhorst_pack_grid(crystal, mpgrid_shape, mpgrid_shift)
+
+# -----Setting up G-Space of calculation-----
+ecut_wfn = 25 * RYDBERG
+ecut_rho = 4 * ecut_wfn
+grho_serial = GSpace(crystal.recilat, ecut_rho)
+
+# If G-space parallelization is not required, use the serial G-space object
+if dftcomm.n_pwgrp == dftcomm.image_comm.size:  
+    grho = grho_serial
+else:
+    grho = DistGSpace(comm_world, grho_serial)
+gwfn = grho
+
+numbnd = crystal.numel // 2  # Ensure adequate # of bands if system is not an insulator
+conv_thr = 1e-8 * RYDBERG
+diago_thr_init = 1e-2 * RYDBERG
+
+out = scf(
+    dftcomm,
+    crystal,
+    kpts,
+    grho,
+    gwfn,
+    numbnd,
+    is_spin=False,
+    is_noncolin=False,
+    symm_rho=True,
+    rho_start=None,
+    occ_typ="fixed",
+    conv_thr=conv_thr,
+    diago_thr_init=diago_thr_init,
+    iter_printer=print_scf_status,
+    force_stress=True
+)
+
+scf_converged, rho, l_wfn_kgrp, en, v_loc, nloc, xc_compute=out
+
+initial_time=time.time()
+
+start_time = time.time()
+force_ewa=force_ewald(dftcomm=dftcomm,
+                      crystal=crystal,
+                      gspc=gwfn, 
+                      gamma_only=False)
+
+if dftcomm.image_comm.rank==0:
+    print("force ewald", force_ewa)
+    print("Time taken for ewald force: ", time.time() - start_time)
+print(flush=True)
+
+##Calculation time of Local Forces
+start_time = time.time()
+force_loc=force_local(dftcomm=dftcomm,
+                      cryst=crystal, 
+                      gspc=gwfn, rho=rho, 
+                      vloc=v_loc,
+                      gamma_only=False)
+
+if dftcomm.image_comm.rank==0:
+    print("force local", force_loc)
+    print("Time taken for local force: ", time.time() - start_time)
+print(flush=True)
+
+##Calculation time of Non Local Forces
+start_time = time.time()
+force_nloc=force_nonloc(dftcomm=dftcomm,
+                          numbnd=numbnd,
+                          wavefun=l_wfn_kgrp, 
+                          crystal=crystal,
+                          nloc_dij_vkb=nloc)
+
+if dftcomm.image_comm.rank==0:
+    print("force non local", force_nloc)
+    print("Time taken for non local force: ", time.time() - start_time)
+print(flush=True)
+
+#force_time=time.time()
+start_time = time.time()
+force_total, force_norm=force(dftcomm=dftcomm,
+                            numbnd=numbnd,
+                            wavefun=l_wfn_kgrp,
+                            crystal=crystal,
+                            gspc=gwfn, 
+                            rho=rho,
+                            vloc=v_loc,
+                            nloc_dij_vkb=nloc,
+                            gamma_only=False,
+                            verbosity=True)
+
+
+if dftcomm.image_comm.rank==0:
+    print("force total", force_total)
+    print("force norm", force_norm)
+    print("Time taken for force: ", time.time() - start_time)
+
+if comm_world.rank == 0:
+    print("SCF Routine has exited")
+    print(qtmlogger)
+
+final_time=time.time() 
+
+if dftcomm.image_comm.rank==0:
+    print("Total time taken for the calculation", final_time-initial_time)
+
+if comm_world.rank == 0:
+    print("SCF Routine has exited")
+    print(qtmlogger)
