@@ -34,6 +34,7 @@ from qtm.kpts import gen_monkhorst_pack_grid
 from qtm.gspace import GSpace
 from qtm.mpi import QTMComm
 from qtm.dft import DFTCommMod, scf
+from qtm.force import force, force_ewald, force_local, force_nonloc
 
 from qtm.io_utils.dft_printers import print_scf_status
 
@@ -119,7 +120,7 @@ out = scf(
     occ_typ="fixed",
     conv_thr=conv_thr,
     diago_thr_init=diago_thr_init,
-    iter_printer=print_scf_status,
+    iter_printer=print_scf_status
 )
 
 scf_converged, rho, l_wfn_kgrp, en = out
