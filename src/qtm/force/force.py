@@ -61,11 +61,11 @@ def force(dftcomm: DFTCommMod,
             print("Non-Local forces are", nonlocal_force)
 
     scf_force=np.zeros_like(ewald_force)
-    if type(del_v_hxc) is not None:
+    '''if type(del_v_hxc) is not None:
         scf_force=force_scf(del_vhxc=del_v_hxc,
                             dftcomm=dftcomm,
                             cryst=crystal,
-                            grho=gspc)
+                            grho=gspc)'''
     if comm.rank==0 and verbosity:
         print("SCF forces are", scf_force)
     ##Add the forces
