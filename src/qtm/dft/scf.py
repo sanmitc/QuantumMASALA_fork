@@ -585,7 +585,7 @@ def scf(
                 if var not in ["scf_converged", "rho_in", "l_kswfn_kgrp", "en", "nloc_dij_vkb"]:
                     del locals()[var]
             gc.collect()
-            return scf_converged, rho_in, l_kswfn_kgrp, en, v_ion_list, nloc_dij_vkb, xc_compute, del_v_hxc
+            return scf_converged, rho_in, l_kswfn_kgrp, en, v_ion_list, nloc_dij_vkb, xc_compute
         else:
             for var in list(locals().keys()):
                 if var not in ["scf_converged", "rho_in", "l_kswfn_kgrp", "en"]:
