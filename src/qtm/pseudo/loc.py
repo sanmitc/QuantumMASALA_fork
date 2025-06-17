@@ -324,14 +324,10 @@ def loc_generate_pot_rhocore(sp: BasisAtoms, grho: GSpace, mult_struct_fact:bool
         rho_core.data[:] = 0
 
     N = np.prod(grho.grid_shape)
-    v_ion *= _4pibv*N
-    rho_core *= _4pibv *N
+    v_ion_mult  = v_ion*struct_fac*N
+    rho_core_mult = rho_core*struct_fac*N
 
-    if mult_struct_fact:
-        v_ion*= struct_fac
-        rho_core *= struct_fac
-
-    return v_ion, rho_core
+    return v_ion_mult, rho_core_mult, v_ion, rho_core
 
 
 def loc_generate_dpot(sp: BasisAtoms, grho: GSpace) -> FieldGType:
