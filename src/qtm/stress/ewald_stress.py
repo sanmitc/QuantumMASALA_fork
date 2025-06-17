@@ -9,7 +9,7 @@ from qtm.constants import ELECTRON_RYD, PI, RY_KBAR
 EWALD_ERR_THR = 1e-7  # TODO: In quantum masala ewald energy code it is set to 1e-7
 
 
-def rgen(rmax: float,
+def rgen2(rmax: float,
          max_num: int,
          beta: float,
          latvec: np.ndarray,
@@ -52,6 +52,63 @@ def rgen(rmax: float,
                 if vec_num >= max_num:
                     raise ValueError(f"maximum allowed value of r vectors are {max_num}, got {vec_num}. ")
     return r, r_norm, vec_num
+
+
+
+def transgen(latvec: np.ndarray,
+         rmax: float):
+    """r max: the maximum radius we take into account
+
+    max_num: maximum number of r vectors
+
+    latvec: lattice vectors, each column representing a vector.
+            Numpy array with dimensions (3,3)
+
+    recvec: reciprocal lattice vectors, each column representing a vector.
+            Numpy array with dimensions (3,3)
+
+    dtau: difference between atomic positions. numpy array with shape (3,)"""
+
+
+    # making the grid
+    n = np.floor(1/np.linalg.norm(latvec, axis=1)*rmax).astype('i8') + 2
+    ni = n[0]
+    nj = n[1]
+    nk = n[2]
+    l0 = latvec[:, 0]
+    l1 = latvec[:, 1]
+    l2 = latvec[:, 2]
+    i=np.arange(-ni, ni)
+    j=np.arange(-nj, nj)
+    k=np.arange(-nk, nk)
+    l0_trans=np.outer(i, l0)
+    l1_trans=np.outer(j, l1)
+    l2_trans=np.outer(k, l2)
+    l0_trans=l0_trans[np.newaxis, :, np.newaxis, np.newaxis, :]
+    l1_trans=l1_trans[np.newaxis, np.newaxis, :, np.newaxis, :]
+    l2_trans=l2_trans[np.newaxis, np.newaxis, np.newaxis, :, :]
+    trans=np.squeeze(l0_trans+l1_trans+l2_trans).reshape(-1,3)
+    del i, j, k, l0_trans, l1_trans, l2_trans
+    return trans
+
+def rgen(trans:np.ndarray,
+         dtau:np.ndarray,
+         max_num:float,
+            rmax:float
+         ):
+    if rmax == 0:
+        raise ValueError("rmax is 0, grid is non-existent.")
+    trans_copy=trans.copy()
+    trans_copy-=dtau
+    norms=np.linalg.norm(trans_copy, axis=1)
+    mask=(norms<rmax) & (norms**2>1e-5)
+    r=trans_copy[mask]
+    r_norm=norms[mask]
+    vec_num=r.shape[0]
+    del trans_copy, norms, mask
+    if vec_num >= max_num:
+        raise ValueError(f"maximum allowed value of r vectors are {max_num}, got {vec_num}. ")
+    return r.T, r_norm, vec_num
 
 
 def stress_ewald(
@@ -135,17 +192,23 @@ def stress_ewald(
     for idx in range(3):
         S_L[idx,idx]-=s_self
 
-    rmax = 4 / eta / alat
-    max_num = 50
+    rmax = 5 / eta / alat
+    max_num = 100
+    trans=transgen(latvec=latvec, rmax=rmax)
+
     S_S = np.zeros((3, 3))
     for atom1 in range(tot_atom):
         for atom2 in range(tot_atom):
             dtau = (coords_cart_all[:, atom1] - coords_cart_all[:, atom2]) / alat
-            rgenerate = rgen(rmax=rmax,
+            recvec=np.array(gspc.recilat.axes_tpiba)
+            dtau@=recvec.T
+            dtau_frac=dtau-np.round(dtau)
+            dtau0=latvec.T@dtau_frac
+            rgenerate = rgen(trans=trans,
+                             dtau=dtau0,
                              max_num=max_num,
-                             beta=eta,
-                             latvec=latvec,
-                             dtau=dtau)
+                             rmax=rmax
+                             )
             r, r_norm, vec_num = rgenerate
             rr=r_norm*alat
             r_tensor=np.einsum('ij, ik-> ijk', r.T, r.T)*alat**2
