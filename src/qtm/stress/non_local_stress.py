@@ -49,7 +49,8 @@ def stress_nonloc(dftcomm:DFTCommMod,
                 start_time = perf_counter() 
                 k_nonloc= NonlocGenerator(sp=sp,
                                             gwfn=gkspace.gwfn)
-                vkb_full, djvkb_full, dyvkb_full,  dij, vkb_diag = k_nonloc.gen_vkb_dij(k_wfn.gkspc, dj=True, dy=True)
+                vkb_full, dij, vkb_diag = k_nonloc.gen_vkb_dij(k_wfn.gkspc)
+                djvkb_full, dyvkb_full = k_nonloc.gen_vkb_dij_deriv(k_wfn.gkspc)
                 if dftcomm.image_comm.rank==0: 
                     '''print("Time taken for non local generator in stress: ", perf_counter() - start_time)
                     print(flush=True)'''
