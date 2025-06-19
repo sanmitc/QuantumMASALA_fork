@@ -11,7 +11,8 @@ from qtm.config import NDArray
 ##LIBXC functional is set to None
 def stress_xc(cryst:Crystal,
               gspc:GSpace,
-              rho:FieldGType
+              rho:FieldGType,
+              xc_compute:tuple
               )->NDArray:
     ## This routine calculates the stress caused by the exchange-correlation potential
     #setting up the characteristics of the crystal
@@ -19,12 +20,8 @@ def stress_xc(cryst:Crystal,
     l_atoms = cryst.l_atoms
     libxc_func = xc.get_libxc_func(cryst)
     #print(libxc_func)
-    FieldG_rho: FieldGType = get_FieldG(gspc)
-    rho_core = FieldG_rho.zeros(1)
-    for sp in l_atoms:
-        v_ion_sp, rho_core_sp=loc_generate_pot_rhocore(sp, gspc)
-        rho_core+=rho_core_sp
-    v_xc, en_xc, GGA_stress = xc.compute(rho, rho_core, *libxc_func)
+    
+    v_xc, en_xc, GGA_stress = xc_compute
     rho_r=rho.to_r()
     diag_xc_r=np.real(np.sum(v_xc._data*np.conj(rho_r._data))*gspc.reallat_dv)
     diag_xc=(diag_xc_r-en_xc)
