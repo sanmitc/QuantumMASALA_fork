@@ -307,11 +307,12 @@ def scf(
 
         v_ion_list=[]
         l_nloc = []
-        local_fs=False
+        rho_core_nomult=FieldG_rho.zeros(1)
         for sp in crystal.l_atoms:
-            v_ion_sp, rho_core_sp, v_ion_nomult, rho_core_nomult = loc_generate_pot_rhocore(sp, grho)
+            v_ion_sp, rho_core_sp, v_ion_nomult, rho_core_nomult_sp= loc_generate_pot_rhocore(sp, grho)
             v_ion += v_ion_sp
             rho_core += rho_core_sp
+            rho_core_nomult+=rho_core_nomult_sp
             l_nloc.append(NonlocGenerator(sp, gwfn))
             v_ion_list.append(v_ion_nomult)
         v_ion = v_ion.to_r()
@@ -345,7 +346,7 @@ def scf(
         def compute_vloc():
             nonlocal rho_in, v_hart, v_xc, vloc, vloc_g0, v_ion_g0, xc_compute
             v_hart, en.hartree = hartree.compute(rho_in)
-            v_xc, en.xc, GGA = xc.compute(rho_in, rho_core, *libxc_func, force_stress=local_fs)
+            v_xc, en.xc, GGA = xc.compute(rho_in, rho_core, *libxc_func, force_stress=force_stress)
             xc_compute=(v_xc, en.xc, GGA)
             vloc = v_ion + v_hart + v_xc
 
@@ -585,7 +586,7 @@ def scf(
                 if var not in ["scf_converged", "rho_in", "l_kswfn_kgrp", "en", "nloc_dij_vkb"]:
                     del locals()[var]
             gc.collect()
-            return scf_converged, rho_in, l_kswfn_kgrp, en, v_ion_list, nloc_dij_vkb, xc_compute
+            return scf_converged, rho_in, l_kswfn_kgrp, en, v_ion_list, rho_core_nomult, nloc_dij_vkb, xc_compute
         else:
             for var in list(locals().keys()):
                 if var not in ["scf_converged", "rho_in", "l_kswfn_kgrp", "en"]:
