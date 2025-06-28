@@ -119,7 +119,6 @@ def stress_ewald(
 
     # calculating the analogous structure factor:
     str_fac = np.sum(np.exp(1j * coords_cart_all.T @ gcart_nonzero) * valence_all.reshape(-1, 1), axis=0)
-    print("str_fac_shape", dftcomm.pwgrp_intra.rank , "=", str_fac.shape)
     # getting the error bounds TODO: write the error formula
     alpha = 2.8
 

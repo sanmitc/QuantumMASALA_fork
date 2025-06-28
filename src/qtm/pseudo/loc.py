@@ -323,6 +323,9 @@ def loc_generate_pot_rhocore(sp: BasisAtoms, grho: GSpace) -> (FieldGType, Field
     else:
         rho_core.data[:] = 0
 
+    v_ion*=_4pibv
+    rho_core*=_4pibv
+
     N = np.prod(grho.grid_shape)
     v_ion_mult  = v_ion*struct_fac*N
     rho_core_mult = rho_core*struct_fac*N
@@ -347,6 +350,9 @@ def loc_generate_dpot(sp: BasisAtoms, grho: GSpace) -> FieldGType:
 
     g_norm2 = grho.g_norm2[grho.idxsort]
     g_norm=grho.g_norm[grho.idxsort]
+    if g_norm.ndim==2:
+        g_norm = g_norm[0]
+    #print("the value of g_norm is", g_norm)
     FieldG: type[FieldGType] = get_FieldG(grho)
 
     valence = upfdata.z_valence

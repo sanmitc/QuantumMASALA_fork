@@ -3,8 +3,10 @@ import numpy as np
 from qtm.gspace.gspc import GSpace
 from qtm.containers.field import FieldGType
 from qtm.constants import  ELECTRON_RYD, PI, RY_KBAR
+from qtm.dft import DFTCommMod
 
-def stress_har(rho:FieldGType,
+def stress_har(dftcomm:DFTCommMod,
+                rho:FieldGType,
                gspc:GSpace,
                gamma_only:bool=False):
 
@@ -29,4 +31,6 @@ def stress_har(rho:FieldGType,
 
     fac=1 if gamma_only else 0.5
     stress_har*=-_4pi*fac
+    if dftcomm.pwgrp_intra is not None:
+        stress_har = dftcomm.pwgrp_intra.allreduce(stress_har)
     return stress_har*RY_KBAR

@@ -45,6 +45,7 @@ def stress_local(dftcomm:DFTCommMod,
         v_loc[labels==isp]=np.real(vloc[isp].data)
         dv_loc_isp = loc_generate_dpot(l_atoms[isp], gspc)
         dv_loc[labels==isp]=np.real(dv_loc_isp.data)
+    if dftcomm.pwgrp_intra is None or dftcomm.pwgrp_intra.size==1: v_loc=v_loc[:,idxsort]
     loc_stress=np.zeros((3,3))
     fact=2 if gamma_only else 1
     g_tensor=np.einsum("ij, ik->ijk", cart_g.T, cart_g.T)
