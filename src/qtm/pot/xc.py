@@ -184,6 +184,7 @@ def compute(
             div_h = fieldg_div(h_r.to_g()).to_r()
             if force_stress:
                 grad_rho_r_T=grad_rho_r[0]._data.T
+                ##Only for spin 0
                 grad_rho_tensor=np.einsum("ij, ik->ijk", grad_rho_r_T, grad_rho_r_T)
                 grad_rho_tensor*=vsig_r[0]._data.reshape(-1,1,1)
                 xc_GGA_stress+=np.sum(grad_rho_tensor, axis=0)
