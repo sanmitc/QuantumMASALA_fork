@@ -155,7 +155,6 @@ def NVE_MD(dftcomm: DFTCommMod,
           dt: float,
           T_init: float,
           vel_init: None | np.ndarray,
-          coords_prev: None | np.ndarray,
           kpts: KList,
           grho: GSpace,
           gwfn: GSpace,
@@ -163,6 +162,7 @@ def NVE_MD(dftcomm: DFTCommMod,
           numbnd:int,
           is_spin:bool,
           is_noncolin:bool,
+          coords_prev: None | np.ndarray =None,
           symm_rho:bool=True,
           rho_start: FieldGType | tuple[float, ...] | None=None,
           wfn_init: WfnInit | None = None,
@@ -198,6 +198,8 @@ def NVE_MD(dftcomm: DFTCommMod,
         coords_cart_all = np.concatenate([sp.r_cart for sp in l_atoms], axis =1).T
         coords_ref=coords_cart_all/reallat.alat
         ##This is a numatom times 3 array containing the coordinates of all the atoms in the crystal
+        ##Extracting the k grid properties
+
         #endregion: Extract the crystal properties
 
         ##INIT-MD
@@ -282,7 +284,7 @@ def NVE_MD(dftcomm: DFTCommMod,
                                                     *coord_alat_sp)
                     l_atoms_itr.append(Basis_atoms_sp)
                 crystal_itr=Crystal(reallat, l_atoms_itr)
-                #kpts_itr=gen_monkhorst_pack_grid(crystal_itr, kgrid, kshift, use_symm, is_time_reversal)
+                kpts.recilat= crystal_itr.recilat  ##This is just to circumvent the error message
                 
                 FieldG_rho_itr: FieldGType= get_FieldG(grho)
                 if rho is not None: rho_itr=FieldG_rho_itr(rho.data)
@@ -320,7 +322,7 @@ def NVE_MD(dftcomm: DFTCommMod,
                         force_stress=True
                         )
                 
-                scf_converged, rho, l_wfn_kgrp, en, v_loc, nloc, xc_compute, del_vhxc = out
+                scf_converged, rho, l_wfn_kgrp, en, v_loc, rho_core, nloc, xc_compute = out
                 '''if comm.rank==0:  
                     print("my rank is", dftcomm.image_comm.rank)
                     print("And I have successfully calculated energy", en.total)'''
@@ -334,7 +336,6 @@ def NVE_MD(dftcomm: DFTCommMod,
                                     rho=rho,
                                     vloc=v_loc,
                                     nloc_dij_vkb=nloc,
-                                    del_v_hxc=del_vhxc,
                                     gamma_only=False,
                                     remove_torque=False,
                                     verbosity=True)[0]

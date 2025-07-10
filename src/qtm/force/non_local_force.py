@@ -29,7 +29,7 @@ def force_nonloc(dftcomm:DFTCommMod,
     l_atoms = crystal.l_atoms
     num_typ=len(l_atoms)
     tot_atom = np.sum([sp.numatoms for sp in l_atoms])
-    atom_label= np.concatenate([np.arange(sp.numatoms) for sp in l_atoms])
+    #atom_label= np.concatenate([np.arange(sp.numatoms) for sp in l_atoms])
 
     ##Initializing the force array 
     force_nl=np.zeros((tot_atom, 3))
