@@ -209,12 +209,11 @@ def Andersen_MD(dftcomm: DFTCommMod,
         temperature_array = np.empty(time_step)
         msd_array = np.empty(time_step)
 
-
         ##Define the Radial Distribution function
         Rdist_array=[]
         bins=1000
         rmax=np.array([0.5, 0.5, 0.5])
-        r_in, rdist_in=Rdist(crystal, coords_cart_all, bins, rmax) 
+        r_in, rdist_in=RDist(crystal, coords_cart_all, rmax, bins) 
         Rdist_array.append(rdist_in)
 
         ##This computes the forces on the molecules
@@ -237,6 +236,7 @@ def Andersen_MD(dftcomm: DFTCommMod,
                                                     *coord_alat_sp)
                     l_atoms_itr.append(Basis_atoms_sp)
                 crystal_itr=Crystal(reallat, l_atoms_itr)
+                kpts.recilat= crystal_itr.recilat
                 #kpts_itr=gen_monkhorst_pack_grid(crystal_itr, kgrid, kshift, use_symm, is_time_reversal)
                 
                 FieldG_rho_itr: FieldGType= get_FieldG(grho)
@@ -275,7 +275,7 @@ def Andersen_MD(dftcomm: DFTCommMod,
                         force_stress=True
                         )
                 
-                scf_converged, rho, l_wfn_kgrp, en, v_loc, nloc, xc_compute, del_vhxc = out
+                scf_converged, rho, l_wfn_kgrp, en, v_loc, rho_core,  nloc, xc_compute = out
                 if comm.rank==0:  
                     print("my rank is", dftcomm.image_comm.rank)
                     print("And I have successfully calculated energy", en.total)
@@ -289,7 +289,6 @@ def Andersen_MD(dftcomm: DFTCommMod,
                                     rho=rho,
                                     vloc=v_loc,
                                     nloc_dij_vkb=nloc,
-                                    del_v_hxc=del_vhxc,
                                     gamma_only=False,
                                     verbosity=True)[0]
 
@@ -412,7 +411,7 @@ def Andersen_MD(dftcomm: DFTCommMod,
 
 
             ##Calculating the Radial Distribution function
-            rdist_in=Rdist(crystal, coords_cart_all, bins, rmax)[1]
+            rdist_in=RDist(crystal, coords_cart_all, rmax, bins)[1]
             Rdist_array.append(rdist_in)
 
             if dftcomm.image_comm.rank==0:
