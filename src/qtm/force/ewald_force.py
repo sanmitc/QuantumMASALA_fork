@@ -111,17 +111,29 @@ def force_ewald(
         crystal: Crystal,
         gspc: GSpace,
         gamma_only: bool = False) -> np.ndarray:
-    """This code implements ewald forces given the crystal structure and Gspace.
+    r"""This code implements ewald forces given the crystal structure and Gspace.
 
         Input:
         crystal: The crystal structure of the substance. Type crystal
         gspc: The G space characteristics. Type GSpace
 
         Note: Quantum Espresso uses alat units. Quantum MASALA uses cryst units.
+        The Ewald forces are given as:
 
+        $$-\sum_{\vec{L},n }\sum_{j}'Z_iZ_j\frac{\vec{r}_i-\vec{r}_j+\vec{L}n}{|\vec{r}_i-\vec{r}_j+\vec{L}n|\sqrt{2}\sigma	}H(\frac{|\vec{r}_i-\vec{r}_j+\vec{L}n|}{\sqrt{2}\sigma})+\sum_{\vec{k}\neq 0}\sum_jZ_jZ_i\frac{\vec{k}}{2V\epsilon_0k^2}\exp(-\frac{\sigma^2k^2}{2})\sin(\vec{k}.(\vec{r}_j-\vec{r}_i))$$
+        where $H(x)$ is given by:
+        $$H(x)=\frac{\partial \text{erfc}(x)}{\partial x}-\frac{\text{erfc}(x)}{x}$$
+        The first part is calculated in the real-space and the second term is calculated in the reciprocal space. First, in the code all the necessary information
+        is extracted from the crystal. 
+
+        In the subsequent part, a parameter named $\alpha$ is defined which is defined $\alpha=2\sigma^2$ and $\eta=\sqrt{2}\sigma$
+
+        In the later part first the reciprocal part of the force is calculated and then the real space part is calculated. In calculating the real part,
+        use of complimentary functions are used. 
+        
         Output:
         An array of shape (3, numatom) depicting ewald forces acting on each atom.
-        numatom being the number of atoms in the crystal.
+        numatom being the number of atoms in the crystal
 
         Primvec of Gspc.recilat: The columns represent the reciprocal lattice vectors"""
     # getting the characteristic of the g_vectors:
