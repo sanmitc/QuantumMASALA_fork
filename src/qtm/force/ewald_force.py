@@ -10,60 +10,33 @@ from qtm.constants import ELECTRON_RYD, PI, RYDBERG_HART
 from qtm.dft import DFTCommMod
 EWALD_ERR_THR = 1e-6  # TODO: In quantum masala ewald energy code it is set to 1e-7
 
-'''def rgen2(rmax: float,
-         max_num: int,
-         beta: float,
-         latvec: np.ndarray,
-         dtau: np.ndarray):
-    """r max: the maximum radius we take into account
-
-    max_num: maximum number of r vectors
-
-    latvec: lattice vectors, each column representing a vector.
-            Numpy array with dimensions (3,3)
-
-    recvec: reciprocal lattice vectors, each column representing a vector.
-            Numpy array with dimensions (3,3)
-
-    dtau:difference between atomic positions. numpy array with shape (3,)"""
-    file=open("rgen2.txt", "a")
-    if rmax == 0:
-        raise ValueError("rmax is 0, grid is non-existent.")
-    # making the grid
-    n = np.floor(2 / beta / np.linalg.norm(latvec, axis=1)).astype('i8') + 2
-    ni = n[0]
-    nj = n[1]
-    nk = n[2]
-    print("ni, nj, nk" , ni, nj, nk)
-    vec_num = 0
-    r = np.zeros((3, max_num))
-    r_norm = np.zeros((max_num))
-    for i in range(-ni, ni):
-        for j in range(-nj, nj):
-            for k in range(-nk, nk):
-                t = i * latvec[:, 0] + j * latvec[:, 1] + k * latvec[:, 2] - dtau
-                t_norm = np.linalg.norm(t)
-                if t_norm < rmax and np.abs(t_norm) > 1e-5:
-                    r[:, vec_num] = t
-                    r_norm[vec_num] = t_norm
-                    vec_num += 1
-                if vec_num >= max_num:
-                    raise ValueError(f"maximum allowed value of r vectors are {max_num}, got {vec_num}. ")
-    return r, r_norm'''
-
 def transgen(latvec: np.ndarray,
          rmax: float):
-    """r max: the maximum radius we take into account
-
-    max_num: maximum number of r vectors
+    r"""\textbf{Input}
+    
+    r max: the maximum radius we take into account, 
+            and we keep all the atoms inside that radius. 
 
     latvec: lattice vectors, each column representing a vector.
             Numpy array with dimensions (3,3)
 
-    recvec: reciprocal lattice vectors, each column representing a vector.
-            Numpy array with dimensions (3,3)
+    For example the lattice vectors are given by $\vec{l}_1, \vec{l}_2, \vec{l}_3$\\
+    and the maximum radius is $r_{max}$\\\\
+    The we make a grid that spans from the point 0,0,0 to approximately $\frac{r_{max}}{|l_1|}$, \frac{r_{max}}{|l_2|}, \frac{r_{max}}{|l_3|}$ 
+    points in x,y,z directions in the first octant of the 3D space. Same is the case for the other of octants. It makes a grid where for
+    any point $(i_1, i_2, i_3), |i_j|<r_{max} \forall j=1,2,3$\\\\
 
-    dtau: difference between atomic positions. numpy array with shape (3,)"""
+    This makes a 3D grid of approximately $2\frac{r_{max}}{|l_1|}$ \times 2\frac{r_{max}}{|l_2|} \times 2\frac{r_{max}}{|l_3|}$ points.
+
+    Now, the lattcie vectors are incorporated into this 3D grid in such a way that each point of this grid contains a vector. 
+    If the point index is $(i_1,i_2,i_3) \quad  -\frac{r_{max}}{|l_j|} \leq i_j \leq \frac{r_{max}}{|l_j|} \forall j=1,2,3 $, 
+    then that point contains the vector $\vec{v}= \sum_{j=1}^3 i_j\vec{l}_j$
+
+    After that the 3D grid is flattened for simple handling in the subsequent steps.
+
+   \textbf{Output}:
+   A flattened array of dimension: $3 \times (8\prod_{j=1}^3 \frac{r_{max}}{|l_j|})$
+    """
 
 
     # making the grid
@@ -92,6 +65,33 @@ def rgen(trans:np.ndarray,
          max_num:float,
             rmax:float
          ):
+         r"""\textbf{Input}:
+         
+         trans: An array of the dimension $3 \times number of points in a 3D grid. 
+         It is basically a flattened 3D grid, where each grid point contains a vector$
+
+         dtau: The interatomic distance by which this grid named "trans" would be shifted.
+
+         max\_num: The maximum number of vectors that will be 
+         considered for constructing the real-space grid of the Ewald calculation.
+
+         rmax: The maximum distance in $x,y,z$ direction that a real-space grid point can be from the origin.
+
+         \textbf{Description:}
+         For context read the documentation of the \texttt{transgen} function.
+         In this function, a 3D grid was constructed such for any point $(i_1, i_2, i_3), |i_j|<r_{max} \forall j=1,2,3$ 
+
+         Now, this grid is shifted by the amount dtau. And it is checked how many of these still satisfy the cristeria 
+         that every point $(i_1, i_2, i_3), |i_j|<r_{max} \forall j=1,2,3$
+
+         \textbf{Output:}
+
+         r.T: The transpose of the vectors which satisfy the above said criteria.
+
+         r\_norm: The norms of those vectors
+
+         vec\_num: Number of such vectors.
+         """
     if rmax == 0:
         raise ValueError("rmax is 0, grid is non-existent.")
     trans_copy=trans.copy()
