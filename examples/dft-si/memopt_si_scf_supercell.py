@@ -1,5 +1,3 @@
-
-import numpy as np
 """
 This example file demonstrates the usage of G-space parallelization in QuantumMASALA.
 
@@ -25,6 +23,7 @@ Output:
 - SCF convergence status and results.
 
 """
+import numpy as np
 from qtm.constants import RYDBERG
 from qtm.lattice import RealLattice
 from qtm.crystal import BasisAtoms, Crystal
@@ -34,13 +33,10 @@ from qtm.kpts import gen_monkhorst_pack_grid
 from qtm.gspace import GSpace
 from qtm.mpi import QTMComm
 from qtm.dft import DFTCommMod, scf
-from qtm.force import force, force_ewald, force_local, force_nonloc
 
 from qtm.io_utils.dft_printers import print_scf_status
 
 import argparse
-
-
 
 from qtm import qtmconfig
 from qtm.logger import qtmlogger
@@ -55,6 +51,16 @@ else:
     COMM_WORLD = None
 
 comm_world = QTMComm(COMM_WORLD)
+
+
+# Memory tracing
+# =============================================================================
+import tracemalloc
+# # Flag to determine if we select NumPy domain
+# use_np_domain = True
+# # Start to trace memory
+tracemalloc.start()
+# =============================================================================
 
 # Only G-space parallelization
 # K-point and/or band parallelization along with G-space parallelization is currently broken.
@@ -120,7 +126,7 @@ out = scf(
     occ_typ="fixed",
     conv_thr=conv_thr,
     diago_thr_init=diago_thr_init,
-    iter_printer=print_scf_status
+    iter_printer=print_scf_status,
 )
 
 scf_converged, rho, l_wfn_kgrp, en = out
@@ -128,3 +134,21 @@ scf_converged, rho, l_wfn_kgrp, en = out
 if comm_world.rank == 0:
     print("SCF Routine has exited")
     print(qtmlogger)
+
+# =============================================================================
+
+current, peak = tracemalloc.get_traced_memory()
+print("Communication world size: ", comm_world.size)
+# print("G-space parallelization: ", dftcomm.pwgrp_intra.size)
+print(f"Peak memory usage: {peak / 10**6}MB; Current memory usage: {current / 10**6}MB")
+
+if comm_world.rank == 0:
+    with open(f"memopt_si_scf_supercell_{supercell_size}_mpi_{comm_world.size}.txt", "w") as f:
+        f.write(f"Supercell size: {supercell_size}\n")
+        f.write(f"Communication world size: {comm_world.size}\n")
+        # f.write(f"G-space parallelization: {dftcomm.pwgrp_intra.size}\n")
+        f.write(f"Peak memory usage: {peak / 10**6}MB; Current memory usage: {current / 10**6}MB\n")
+        f.write(f"Result: {supercell_size}, {comm_world.size}, {peak / 10**6}, {current / 10**6}")
+tracemalloc.stop()
+
+# =============================================================================

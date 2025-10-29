@@ -39,6 +39,7 @@ from qtm.force import force, force_ewald, force_local, force_nonloc
 from qtm.io_utils.dft_printers import print_scf_status
 
 import argparse
+import time
 
 
 
@@ -120,10 +121,78 @@ out = scf(
     occ_typ="fixed",
     conv_thr=conv_thr,
     diago_thr_init=diago_thr_init,
-    iter_printer=print_scf_status
+    iter_printer=print_scf_status,
+    force_stress=True
 )
 
-scf_converged, rho, l_wfn_kgrp, en = out
+scf_converged, rho, l_wfn_kgrp, en, v_loc, nloc, xc_compute=out
+
+initial_time=time.time()
+
+start_time = time.time()
+force_ewa=force_ewald(dftcomm=dftcomm,
+                      crystal=crystal,
+                      gspc=gwfn, 
+                      gamma_only=False)
+
+if dftcomm.image_comm.rank==0:
+    print("force ewald", force_ewa)
+    print("Time taken for ewald force: ", time.time() - start_time)
+print(flush=True)
+
+##Calculation time of Local Forces
+start_time = time.time()
+force_loc=force_local(dftcomm=dftcomm,
+                      cryst=crystal, 
+                      gspc=gwfn, rho=rho, 
+                      vloc=v_loc,
+                      gamma_only=False)
+
+if dftcomm.image_comm.rank==0:
+    print("force local", force_loc)
+    print("Time taken for local force: ", time.time() - start_time)
+print(flush=True)
+
+##Calculation time of Non Local Forces
+start_time = time.time()
+force_nloc=force_nonloc(dftcomm=dftcomm,
+                          numbnd=numbnd,
+                          wavefun=l_wfn_kgrp, 
+                          crystal=crystal,
+                          nloc_dij_vkb=nloc)
+
+if dftcomm.image_comm.rank==0:
+    print("force non local", force_nloc)
+    print("Time taken for non local force: ", time.time() - start_time)
+print(flush=True)
+
+#force_time=time.time()
+start_time = time.time()
+force_total, force_norm=force(dftcomm=dftcomm,
+                            numbnd=numbnd,
+                            wavefun=l_wfn_kgrp,
+                            crystal=crystal,
+                            gspc=gwfn, 
+                            rho=rho,
+                            vloc=v_loc,
+                            nloc_dij_vkb=nloc,
+                            gamma_only=False,
+                            verbosity=True)
+
+
+if dftcomm.image_comm.rank==0:
+    print("force total", force_total)
+    print("force norm", force_norm)
+    print("Time taken for force: ", time.time() - start_time)
+
+if comm_world.rank == 0:
+    print("SCF Routine has exited")
+    print(qtmlogger)
+
+final_time=time.time() 
+
+if dftcomm.image_comm.rank==0:
+    print("Total time taken for the calculation", final_time-initial_time)
 
 if comm_world.rank == 0:
     print("SCF Routine has exited")

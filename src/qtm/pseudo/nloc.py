@@ -335,3 +335,180 @@ class NonlocGenerator:
         #         print("Naans in vkb")
 
         return l_vkb_full, dij_full, vkb_diag
+
+
+    @qtmlogger.time('nloc:gen_vkb_dij_deriv')
+    def gen_vkb_dij_deriv(self, gkspc: GkSpace) -> tuple[WavefunGType, NDArray, WavefunGType]:
+        r"""Computes the Nonlocal Operator as a set of Beta Projectors and a
+        transformation matrix
+
+        Parameters
+        ----------
+        gkspc : GSpace
+            Represents the :math:`\mathbf{G} + \mathbf{k}` vectors that form
+            the basis of Wavefunctions
+        Returns
+        -------
+        l_vkb_full : np.ndarray
+            list of all beta projectors spanning across all atoms of the species
+        dij_full : np.ndarray
+            dij matrix. Expanded for all atoms of the species
+        vkb_diag : np.ndarray
+            list of diagonal elements of the non-local operator
+        """
+        # Setting Up: Computing spherical coordinates for all :math:`\mathbf{G}+\mathbf{k}`
+        WavefunG = get_WavefunG(gkspc, 1)
+        numgk = gkspc.size_g
+
+        gk_cryst = gkspc.gk_cryst
+        gk_x, gk_y, gk_z = gkspc.gk_cart
+        gk_norm = gkspc.gk_norm
+        beta_fac = FPI / np.sqrt(gkspc.reallat_cellvol)
+
+        # theta = np.arccos(
+        #     np.divide(gk_z, gk_norm, out=np.zeros_like(gk_z), where=gk_norm > 1e-7)
+        # )
+        # print('np.where(gk_norm <= 1e-5) :',np.where(gk_norm <= 1e-5)) #debug statement
+        where_gk_norm_nonzero = np.where(gk_norm > 1e-7)
+        theta = np.zeros_like(gk_z)
+        theta[where_gk_norm_nonzero] = np.arccos(gk_z[where_gk_norm_nonzero] / gk_norm[where_gk_norm_nonzero])
+        phi = np.arctan2(gk_y, gk_x)
+
+
+        #the spherical harmonic derivatives are only implemented  along the 
+        #projection axis (1,0,0), (0,1,0), (0,0,1). i.e. the normal three dim. coordinate system.
+        def dylm(abs_m, l, ipol):
+            DIFF=1e-8
+            gkcart=gkspc.gk_cart
+            dgk_norm=DIFF*gkspc.gk_norm
+            dgk_norm_nonzero = np.where(dgk_norm>DIFF**2)
+            dgk_norm_inv=np.zeros_like(dgk_norm)
+            dgk_norm_inv[dgk_norm_nonzero]=1/dgk_norm[dgk_norm_nonzero]
+
+            gkcart_low=gkcart.copy()
+            gkcart_low[ipol]-=dgk_norm
+            gkx_low, gky_low, gkz_low = gkcart_low
+
+            gkcart_high=gkcart.copy()
+            gkcart_high[ipol]+=dgk_norm
+            gkx_high, gky_high, gkz_high = gkcart_high
+            
+            gk_norm_low=np.sqrt(np.sum(gkcart_low**2,axis=0))
+            gk_norm_high=np.sqrt(np.sum(gkcart_high**2,axis=0))
+
+            where_gk_norm_nonzero = np.where(gk_norm_low > 1e-7)
+            theta_low = np.zeros_like(gkz_low)
+            theta_low[where_gk_norm_nonzero] = np.arccos(gkz_low[where_gk_norm_nonzero] / gk_norm_low[where_gk_norm_nonzero])
+            phi_low = np.arctan2(gky_low, gkx_low)
+
+            where_gk_norm_nonzero = np.where(gk_norm_high > 1e-7)
+            theta_high = np.zeros_like(gkz_high)
+            theta_high[where_gk_norm_nonzero] = np.arccos(gkz_high[where_gk_norm_nonzero] / gk_norm_high[where_gk_norm_nonzero])
+            phi_high = np.arctan2(gky_high, gkx_high)
+
+            Ylm_high=sph_harm(abs_m, l, phi_high, theta_high)
+            Ylm_low=sph_harm(abs_m, l, phi_low, theta_low)
+
+            diff=(Ylm_high - Ylm_low)*dgk_norm_inv*0.5
+
+            return diff
+        
+
+        l_djvkb_atom = gkspc.allocate_array((self.numvkb, numgk))
+
+        l_dyvkb_atom= gkspc.allocate_array((3,self.numvkb, numgk))
+
+
+        idx_gk = np.rint(gk_norm / DEL_Q).astype("i8")
+        xmin0 = gk_norm / DEL_Q - idx_gk
+        xmin1 = xmin0 - 1
+        xmin2 = xmin0 - 2
+        xmin3 = xmin0 - 3
+
+        idxvkb = 0
+        # Constructing KB Projectors for a single atom
+        for idxbeta in range(self.numbeta):
+            # Lagrange Interpolation for radial part
+            beta_gk = beta_fac * (
+                self.beta_q[idxbeta][idx_gk + 0]
+                * xmin1
+                * xmin2
+                * xmin3
+                / ((0 - 1) * (0 - 2) * (0 - 3))
+                + self.beta_q[idxbeta][idx_gk + 1]
+                * xmin0
+                * xmin2
+                * xmin3
+                / ((1 - 0) * (1 - 2) * (1 - 3))
+                + self.beta_q[idxbeta][idx_gk + 2]
+                * xmin0
+                * xmin1
+                * xmin3
+                / ((2 - 0) * (2 - 1) * (2 - 3))
+                + self.beta_q[idxbeta][idx_gk + 3]
+                * xmin0
+                * xmin1
+                * xmin2
+                / ((3 - 0) * (3 - 1) * (3 - 2))
+            )
+            djbeta_gk = beta_fac * (
+                self.beta_q[idxbeta][idx_gk + 0]
+                * (xmin1*xmin2+xmin2*xmin3+xmin3*xmin1)
+                / ((0 - 1) * (0 - 2) * (0 - 3))
+                + self.beta_q[idxbeta][idx_gk + 1]
+                * (xmin3*xmin2 +xmin0*xmin2 + xmin0*xmin3)
+                / ((1 - 0) * (1 - 2) * (1 - 3))
+                + self.beta_q[idxbeta][idx_gk + 2]
+                * (xmin1*xmin3 +xmin0*xmin1 + xmin0*xmin3)
+                / ((2 - 0) * (2 - 1) * (2 - 3))
+                + self.beta_q[idxbeta][idx_gk + 3]
+                * (xmin2*xmin1 +xmin0*xmin1 + xmin0*xmin2)
+                / ((3 - 0) * (3 - 1) * (3 - 2))
+            )/DEL_Q
+            # Applying angular part using spherical harmonics
+            l = self.beta_l[idxbeta]
+            for abs_m in range(l + 1):
+                ylm = sph_harm(abs_m, l, phi, theta)
+                dy_lm=np.array([dylm(abs_m, l, ipol) for ipol in [0,1,2]])
+                if abs_m == 0:
+                     l_djvkb_atom[idxvkb] = ylm * djbeta_gk
+                     l_dyvkb_atom[:,idxvkb,:]=dy_lm*beta_gk
+                else:
+                     l_djvkb_atom[idxvkb] =  -np.sqrt(2) * (-1) ** abs_m * ylm.imag * djbeta_gk
+                     l_dyvkb_atom[:,idxvkb,:]=-np.sqrt(2) * (-1) ** abs_m * dy_lm.imag * beta_gk
+                     idxvkb += 1
+                     l_djvkb_atom[idxvkb] = -np.sqrt(2) * (-1) ** abs_m * ylm.real * djbeta_gk
+                     l_dyvkb_atom[:,idxvkb,:]=-np.sqrt(2) * (-1) ** abs_m * dy_lm.real * beta_gk
+                idxvkb += 1
+
+        numatoms = self.species.numatoms
+
+        # Generating KB Projectors corresponding to all atoms
+        l_djvkb_full = WavefunG.empty(numatoms * self.numvkb)
+        l_dyvkbx_full= WavefunG.empty(numatoms * self.numvkb)
+        l_dyvkby_full= WavefunG.empty(numatoms * self.numvkb)
+        l_dyvkbz_full= WavefunG.empty(numatoms * self.numvkb)
+        for iat, pos_cryst in enumerate(self.species.r_cryst.T):
+            phase = np.exp(-TPIJ * (pos_cryst @ gk_cryst))
+            l_djvkb_iat = l_djvkb_full[iat*self.numvkb: (iat+1)*self.numvkb]
+            l_dyvkbx_iat= l_dyvkbx_full[iat*self.numvkb: (iat+1)*self.numvkb]
+            l_dyvkby_iat= l_dyvkby_full[iat*self.numvkb: (iat+1)*self.numvkb]
+            l_dyvkbz_iat= l_dyvkbz_full[iat*self.numvkb: (iat+1)*self.numvkb]
+            l_djvkb_iat.data[:] = phase * l_djvkb_atom * (-(1j**self.vkb_l)).reshape(-1, 1)
+            l_dyvkbx_iat.data[:]=phase * l_dyvkb_atom[0] * (-(1j**self.vkb_l)).reshape(-1, 1)
+            l_dyvkby_iat.data[:]=phase * l_dyvkb_atom[1] * (-(1j**self.vkb_l)).reshape(-1, 1)
+            l_dyvkbz_iat.data[:]=phase * l_dyvkb_atom[2] * (-(1j**self.vkb_l)).reshape(-1, 1)
+
+        l_dyvkb_full=(l_dyvkbx_full, l_dyvkby_full, l_dyvkbz_full)
+
+        # dij_full = gkspc.allocate_array((self.numvkb * numatoms, self.numvkb * numatoms))
+        # dij_full*=0
+        # for iat in range(numatoms):
+        #     sl = (slice(iat * self.numvkb, (iat + 1) * self.numvkb))
+        #     dij_full[sl, sl] = dij_atom
+
+        # for vkb in l_vkb_full:
+        #     if np.any(np.isnan(vkb)):
+        #         print("Naans in vkb")
+
+        return l_djvkb_full, l_dyvkb_full
