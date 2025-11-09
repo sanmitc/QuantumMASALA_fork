@@ -13,7 +13,23 @@ def force_nonloc(dftcomm:DFTCommMod,
                  crystal: Crystal,
                  nloc_dij_vkb:list
                  ) -> NDArray:
-    """Calculate the nonlocal force on the atoma from the upf potential"""
+    """Calculate the nonlocal force on the atoma from the upf potential
+    
+    Input:
+    numbnd: Number of Bands. It is used for parallelization and also processing the band wise pseudopotential data.
+    
+    wavefun: A tuple object containing the wavefunction for each k+G vector. If the calculation is not spin-polarized, 
+    then the tuple will containe one wavefunction for each k+G vector. Otherwise, there will be two such objects.
+
+    crystal: A crystal object having all the necessary qualities of a crystal like lattice vectors and information of the atomic basis. 
+
+    nloc_dij_vkb: These are the list of some non local projector operators that are directly computed from the scf loop.
+
+
+
+
+    Output: Nx3 numpy array where N is the number of atoms, representing the forces.
+    """
 
     ##Starting of the parallelization over bands
     assert isinstance(numbnd, int)
@@ -29,7 +45,6 @@ def force_nonloc(dftcomm:DFTCommMod,
     l_atoms = crystal.l_atoms
     num_typ=len(l_atoms)
     tot_atom = np.sum([sp.numatoms for sp in l_atoms])
-    #atom_label= np.concatenate([np.arange(sp.numatoms) for sp in l_atoms])
 
     ##Initializing the force array 
     force_nl=np.zeros((tot_atom, 3))
@@ -52,39 +67,28 @@ def force_nonloc(dftcomm:DFTCommMod,
                 sp=l_atoms[ityp]
                 vkb, dij = dij_vkb[ityp]
                 row_vkb=int(vkb.data.shape[0]/sp.numatoms)
-                #print("rho_vkb shape is", row_vkb)
                 dij_sp=np.concatenate([dij[i*row_vkb:(i+1)*row_vkb, i*row_vkb:(i+1)*row_vkb] for i in range(sp.numatoms)], axis=0).T
-                #print("the shape of dij is ", dij_sp.shape)
                 dij_sp=dij_sp.reshape(-1, sp.numatoms, row_vkb)
-                #print(dij_sp)
                 dij_sp=dij_sp.swapaxes(0,1)
-                #print("the new shape of dij_sp is", dij_sp.shape)
-                
                 vkb=vkb.data
+
                 ##Constructing the G\beta\psi
                 gkcart_struc=gkcart.reshape(-1,1,3)
                 evc_sp=evc.data.T
                 Kc=gkcart_struc*evc_sp[:,:,None]
                 GbetaPsi=np.einsum("ij, jkl->ikl", vkb, np.conj(Kc))
                 GbetaPsi=dftcomm.image_comm.allreduce(GbetaPsi)
-                #print("the shape of GbetaPsi is", GbetaPsi.shape)
                 ##Constructing the \beta\psi
                 betaPsi=np.conj(vkb)@(evc_sp*occ_num.reshape(1,-1))
                 betaPsi=betaPsi.reshape(sp.numatoms, row_vkb, -1)
-                #print("the shape of betaPsi is", betaPsi.shape)
                 betaPsi=dij_sp@betaPsi
                 betaPsi=dftcomm.image_comm.allreduce(betaPsi)
-                #print("New shape of BetaPsi is", betaPsi.shape)
                 betaPsi=betaPsi.reshape(betaPsi.shape[0]*betaPsi.shape[1], -1)
-                #print("BetaPsi shape after collating", betaPsi.shape)
                 ##Multiplying Together
                 V_NL_Psi=GbetaPsi*betaPsi.reshape(*betaPsi.shape, 1)
-                #print("the shape of V_NL_Psi is", V_NL_Psi.shape)
                 V_NL_Psi=V_NL_Psi.reshape(sp.numatoms, row_vkb, V_NL_Psi.shape[1], V_NL_Psi.shape[2])
-                #print("After division, the shape of V_NL_Psi is", V_NL_Psi.shape)
                 V_NL_Psi=np.sum(V_NL_Psi, axis=(1,2))
                 trace=-2*np.imag(V_NL_Psi)
-                #print("the force has a shape", trace.shape)
                 ##Multiply by Weight
                 trace = trace * k_weight
                 force_nl[atom_counter:atom_counter+sp.numatoms]+=trace 
@@ -95,8 +99,6 @@ def force_nonloc(dftcomm:DFTCommMod,
     force_nl/=RYDBERG_HART
     force_nl=dftcomm.image_comm.allreduce(force_nl)
     force_nl/=dftcomm.image_comm.size
-    #force_nl=crystal.symm.symmetrize_vec(force_nl)
-    #force_nl-=np.mean(force_nl, axis=0)
     del nloc_dij_vkb, wavefun, crystal, dftcomm
     gc.collect()
     return force_nl
