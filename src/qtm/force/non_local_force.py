@@ -15,7 +15,8 @@ def force_nonloc(dftcomm:DFTCommMod,
                  ) -> NDArray:
     """Calculate the nonlocal force on the atoma from the upf potential
     
-    Input:
+    Parameters
+    ---------
     numbnd: Number of Bands. It is used for parallelization and also processing the band wise pseudopotential data.
     
     wavefun: A tuple object containing the wavefunction for each k+G vector. If the calculation is not spin-polarized, 
@@ -25,11 +26,37 @@ def force_nonloc(dftcomm:DFTCommMod,
 
     nloc_dij_vkb: These are the list of some non local projector operators that are directly computed from the scf loop.
 
+    Returns
+    ---------
+    Nx3 numpy array where N is the number of atoms, representing the forces.
 
 
+    A brief overview of what is done.
+    ---------------------
 
-    Output: Nx3 numpy array where N is the number of atoms, representing the forces.
+    Before starting the wavefunction loops, the basic crystal information and machinery of parallelization are being set up.
+
+    In the wavefunction loop we can see one loop of the :math:'\mathbf{k}+\mathbf{G}' vectors, another for spin up and down(for spin polarized calculation)
+
+
+    The non local force is given by the following formula, math:: 
+    F= -i \Omega_{at} \sum_{i, \mathbf{k}, \mathbf{G}, \mathbf{G}'}(\mathbf{G-\mathbf{G'})\psi_i^*(\mathbf{k}+\mathbf{G})\psi_i(\mathbf{k}+\mathbf{G}')(\sum_l U_{ps,l, \mathbf{k}+\mathbf{G}, \mathbf{k}+\mathbf{G}'})
+
+
+    Now, the psedopotential term can be written as, math::
+    \sum_l U_{ps,l, \mathbf{k}+\mathbf{G}, \mathbf{k}+\mathbf{G}'}= \sum_{p,j} \beta_p d_{pj} \beta_j^*
+
+    Now the :math: 'd_{pj}' are the dij_sp and the :math:'\beta' matrices are the vkb which are indexed here.
+
+    After that the above force equation is implemented through the following aalgebraic simplification:
+    math::
+    A_p(\mathbf{k})=\sum_{\mathbf{G}} (\mathbf{k}+\mathbf{G})\psi_i^*(\mathbf{k}+\mathbf{G})\beta_p
+    B_p(\mathbf{k})=\sum_{\mathbf{G}} \psi_i^*(\mathbf{k}+\mathbf{G})\beta_p
+    F=2\Omega_{at}\sum_{\mathbf{k},i}(\mathbf{p,j} \text{Imag}(A_p(\mathbf{k})d_{pj}B_j^*(\mathbf{k)))
+
+    The A term is the GBetaPsi and the B term is the BetaPsi indexed in the code. The wavefunction :math:'\psi' is the quantity evc that has been extracted from the wavefunction tuple.
     """
+                   
 
     ##Starting of the parallelization over bands
     assert isinstance(numbnd, int)
