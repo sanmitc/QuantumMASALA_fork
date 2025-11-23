@@ -23,7 +23,74 @@ def force(dftcomm: DFTCommMod,
         gamma_only:bool=False,
         remove_torque:bool=False,
         verbosity:bool=False) -> NDArray:
-    """This routine calculates the forces in Rydberg units"""
+    """This routine calculates the forces in Rydberg units. This will take all the inputs that are required by the individual components
+        of force and return the total force. 
+
+        Input
+        -------------------------------------------------------
+        dftcomm: The MPI module having necessary parameters for parallelization.
+        
+        numbnd: Number of bands in the DFT calculation
+        
+        wavefun: The wavefunction object having the components of the wavefunctions, in the reciprocal lattice basis.
+        
+        crystal: A class object containing necessary information about the crystal of the material.
+        
+        gspc: The class containing information about the reciprocal space.
+        
+        rho: Components of electron density in reciprocal lattice basis,
+        
+        vloc: Compoenents of potential due to local pseudopotential in reciprocal lattice basis.
+        
+        nloc_dij_vkb: Components of potential due to non-local pseudopotential and other necessary information about the non-local potential.
+        
+        del_v_hxc: It is option, but it contains the difference in the Hartree+ Exchange-correlation potential energy in the scf calculation.
+        
+        gamma_only: Flag deciding whether the calculation is only for gamma point.
+        
+        remove_torque: Remove total torque after the application of force.
+        
+        verbosity: Flag dictating whether to print detailed information about individual component of forces.
+
+
+
+
+
+        Output
+        ----------------------------------------------
+
+        force_total= total force, a Nx3 array where N is the number of atoms. 
+
+        force_total_norm= norm of the forces on each atom. It is an N element array.
+
+
+
+
+        Overview
+        -------------------------------------------
+
+        It calculates the force on each atom obtained from DFT calculations. 
+
+        It calculates the :
+
+        1. Ewald forces
+
+        2. Forces due to local pseudopotential
+
+        3. Forces due to non local pseudopotential
+
+        4. Self consistent correction to forces (not yet implemented properly.)
+
+
+        Then it does post-processing of the forces:
+
+        1. It symmetrizes it such that the forces on the atoms respect the crystal symetries.
+
+        2. It makes the total force on all of the atoms zero.
+
+        3. It removes torque from the system, although that is optional and not performed by default.
+    
+    """
     
     l_atoms=crystal.l_atoms
     coords_cart_all = np.concatenate([sp.r_cart for sp in l_atoms], axis=1).T
