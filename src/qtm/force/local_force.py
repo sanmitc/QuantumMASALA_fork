@@ -19,6 +19,44 @@ def force_local(dftcomm: DFTCommMod,
                 vloc:list,
                 gamma_only:bool=False):
 
+    """
+    This routine calculates the force caused by the local pseudopotential. 
+
+    Input parameters
+    -----------------------------
+    dftcomm: The parallelization routine. It has the information about the MPI process. 
+    
+    crystal: This is a class object having information about the crystal structure of the material.
+    
+    gspc: The class object having information about the reciprocal lattice vectors or G-vectors.
+    
+    rho: It contains the fourier components of the electron densities in the reciprocal lattice space basis.
+    
+    vloc: It contains the Fourier compoenents of the local pseudopotential in the basais of reciprocal lattice vectors. 
+    
+    gamma_only: A flag that tells us whether to carry out only Gamma point calculation. 
+
+
+    Output parameters
+    ------------------------------
+    l_force: a Nx3 array containing the forces. N is the number of atoms in the unit-cell considered. 
+  
+    ----------------------------------
+    The formula for this is given as: math::
+    \vec{F}_{loc}= -i\Sigma\sum_{\vec{G}}\vec{G}\exp(i\vec{G}.\vec{R}_\mu)U_{ps}(\vec{G})\rho(\vec{G})
+  
+    :math: 'U_{ps}(\vec{G})' is denoted by vloc here. It is extracted from the input sorted appropriately w.r.t to the corresponding reciprocal lattice vectors.
+  
+    :math: '\rho(\vec{G})' is also direcrly taken from the input. Sorting and normalizing is done later. 
+  
+    :math: '\vec{G}.\vec{R}_\mu' is denoted by gtau, which then is exponentiated.
+  
+    Later all parts are multiplied together to get the forces as indicated by the equation with proper handling of numpy matrices.
+  
+    In case of G-space parallelization. The forces from different processors are added up to get the total force. 
+    
+    """
+
     #Setting up characteristics of the crystal
     #start_time=perf_counter()
     l_atoms=cryst.l_atoms
