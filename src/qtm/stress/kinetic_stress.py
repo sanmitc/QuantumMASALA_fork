@@ -11,6 +11,44 @@ def stress_kinetic(dftcomm:DFTCommMod,
                    numbnd:int, 
                    cryst:Crystal, 
                    wfn_k_group:tuple):
+    """
+    This routine calculates the stress calculated from the electronic kinetic energy.
+
+    Input
+    ----------------------------------
+
+    dftcomm: Routine having the necessary information for parallelization.
+    numbnd: Number of bands
+    cryst: Crystal object having the information about the crystal.
+    wfn_k_group: Tuple object containing the coefficients of the wave function in fourier basis.
+
+
+    Output
+    ----------------------------------
+
+    kin_stress: a 3x3 stress matrix giving the kinetic energy contribution for the electrons. 
+
+
+    Brief overview
+    ---------------------------------
+
+    The kinetic stress expression is given by, math::
+    \sigma_K^{\alpha\beta}= \frac{\hbar^2}{m} \sum_{\vec{k}, \vec{G}, i} |\psi_i(\vec{k}+\vec{G})|^2(\vec{k}+\vec{G})_\alpha (\vec{k}+\vec{G})_\beta
+
+
+    In this module, the first thing done is band slicing so that we can get the bands for each process.
+
+    We then iterate over k points, i.e over each wavefunctions at each k point(for spin polarized calculation we will have two wavefunctions,
+    per k point.)
+
+    for each such wavefunction:
+    1. gkcart: :math:'(\vec{k}+\vec{G})' vectors
+    2. occ_num=occupation number of the band.
+    3. k_weight= The weight assigned to this k point .(Important where k points have been reduced due to symmetry of the crystal.)
+    4. evc_gk= The :math:'|\psi_i(\vec{k}+\vec{G})|' values.
+
+    We then calculate the kinetic stress quantity, as per the mathematical equation. 
+    """
     with dftcomm.kgrp_intra as comm:
         if dftcomm.pwgrp_intra is None:
             band_slice = scatter_slice(numbnd, comm.size, comm.rank)
@@ -38,4 +76,5 @@ def stress_kinetic(dftcomm:DFTCommMod,
     if dftcomm.image_comm is not None:
         #print("kinetic stress in", dftcomm.image_comm.rank, "=", kin_stress)
         kin_stress = dftcomm.image_comm.allreduce(kin_stress)
-    return kin_stress*RY_KBAR
+    kin_stress*=RY_KBAR
+    return kin_stress
