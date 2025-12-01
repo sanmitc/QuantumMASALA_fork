@@ -10,6 +10,34 @@ def stress_har(dftcomm:DFTCommMod,
                gspc:GSpace,
                gamma_only:bool=False):
 
+
+    """
+    This routine calculates the Hartree contribution to the total stress.
+
+
+    Input Parameters
+    --------------------------
+
+    dftcomm: Routine for MPI routines.
+    rho: Plane wave components of the electron density.
+    gspc: Object contanining the reciprocal lattice characteristics.
+    gamma_only: Flag indicating whether only gamma point is being caluclated or not. 
+
+
+    Output
+    --------------------------
+    stress_har: Hartree contribution to stress in KiloBar.
+
+
+
+    Brief Overview
+    ---------------------------
+    The expression for the Hartree stress is given as, math::
+    \sigma_{har}^{\alpha\beta}=2\pi \sum_{\vec{G}}^' \frac{|\rho(\vec{G})^2|}{\vec{G}^2}(\frac{2G_\alphaG_\beta}{G^2}-\delta_{\alpha\beta})
+
+    The g space characteristics are extracted and then the Hartree stress is calculated through the variable g_tensor.
+    """
+
     ## Extracting the g space characteristics
     g_cart=gspc.g_cart
     norm2=gspc.g_norm2[gspc.idxsort]
@@ -33,4 +61,5 @@ def stress_har(dftcomm:DFTCommMod,
     stress_har*=-_4pi*fac
     if dftcomm.pwgrp_intra is not None:
         stress_har = dftcomm.pwgrp_intra.allreduce(stress_har)
-    return stress_har*RY_KBAR
+    stress_har*=RY_KBAR
+    return stress_har
